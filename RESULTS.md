@@ -55,13 +55,3 @@ The figure shows only the tracks that move more than 60 px, on the busiest frame
   DELTA, Track4World and TrackCraft3R. It does follow the shirt (345 moving tracks in shirt_fold).
 - SpatialTrackerV2 drags some points along the arm in pen and covers less of the paper and the shirt
   (287 and 306 moving tracks, against about 400 and 600 for DELTA and Track4World).
-
-## Runtime (A100 80GB)
-
-| Method | Inference per clip | Peak GPU memory |
-| --- | --- | --- |
-| SpatialTrackerV2 | `rgb` 63-92 s, `rgbd_fixed` 6-9 s | 37-60 GB |
-| DELTA | 11-24 s | 12-18 GB |
-| TrackCraft3R | 122-196 s (plus DA3 for `rgb`) | 10-17 GB |
-| Track4World | 51-91 s | 27-30 GB |
-| TraceAnything | 5-6 s | 21 GB |
