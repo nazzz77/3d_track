@@ -16,6 +16,7 @@ viewer that shows all of them side by side.
 for methods that accept external depth). Clips: `pour_lid`, `pen`, `stir`, `shoelace`, `paper_fold`,
 `shirt_fold`. All methods see the same frames (10 fps, at most 200 frames per clip) and track the same
 1,152 query points (a 32x24 grid on frame 0 plus 16x12 grids at 1/3 and 2/3 of the clip).
+A short analysis of the first round is in [RESULTS.md](RESULTS.md).
 
 ## Browse the results (no GPU needed)
 
