@@ -1,0 +1,19 @@
+# Data and results are shared separately (Google Drive archive, see README.md)
+raw_data/
+preprocessed_data/
+*/results/
+track3d_data.zip
+report/
+
+# Environments, model checkouts and caches
+.venv/
+*/work/
+__pycache__/
+*.pyc
+
+# Local tool and OS files
+.claude/
+.DS_Store
+
+# Local notes for Claude Code (kept on this machine only)
+CLAUDE.md
