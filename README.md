@@ -44,9 +44,30 @@ camera. It can filter by method, setting and run, show only moving tracks, and s
 (TraceAnything) to the LiDAR depth. `bash viewer/run_viewer.sh --check` validates every result file
 without starting a server.
 
+## Scene-flow methods (separate viewers)
+
+MotionCrafter and ZeroMSF predict scene flow (the 3D motion of every pixel to the next frame or to a
+second image), not point tracks. They are run the official way and shown in their own viewers, which
+follow the official visualization scripts, instead of the comparison grid above.
+
+| Method | Input | Folder |
+| --- | --- | --- |
+| MotionCrafter | each clip's frames at 512x384, official `run.py` defaults | `motioncrafter/` |
+| ZeroMSF | three image pairs per clip: a frame with much hand motion and the frames 0.1, 0.3 and 1.0 s later | `zeromsf/` |
+
+```bash
+.venv/bin/python motioncrafter/view_motioncrafter.py --clip pen
+.venv/bin/python zeromsf/view_zeromsf.py --clip paper_fold
+```
+
+Both use the `.venv` that `viewer/run_viewer.sh` creates and serve on port 8080 (`--port` to change
+it). MotionCrafter's `run.py` processes each clip in independent 25-frame windows, so its point maps
+jump at frames 25, 50, ...; the viewer shows which window a frame belongs to. Their results are not in
+`track3d_data.zip` yet; produce them on a GPU as described below.
+
 ## Re-run a method (GPU)
 
-Each method folder has three files:
+Each method folder has three files (the scene-flow folders also hold their viewer):
 
 - `setup_env.sh`: one-time install of Miniforge, a Python env, the official code at a pinned commit, and
   every checkpoint (cached under `<method>/work/`, so jobs can run without internet).
@@ -62,7 +83,8 @@ bash run_spatracker.sbatch        # or: sbatch run_spatracker.sbatch
 
 Finished runs are skipped, so a failed or interrupted job can simply be started again. Tested on an
 NVIDIA A100 80GB (Linux, CUDA 12.x driver). Peak GPU memory: SpatialTrackerV2 about 60 GB on the longest
-clip, Track4World 30 GB, TraceAnything 21 GB, DELTA 18 GB, TrackCraft3R 17 GB. Do not use Blackwell GPUs
+clip, MotionCrafter 39 GB, Track4World 30 GB, TraceAnything 21 GB, DELTA 18 GB, TrackCraft3R 17 GB,
+ZeroMSF 7 GB. Do not use Blackwell GPUs
 (B200, RTX 5090, RTX PRO 6000): the pinned PyTorch versions do not support them. Containers that show
 every host core but cap CPU time need `OMP_NUM_THREADS` near the granted vCPU count (the job scripts
 default to 8, or `SLURM_CPUS_PER_TASK`).
