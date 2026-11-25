@@ -94,16 +94,5 @@ the same first frame.
 - Both methods put the motion on the hands and the manipulated objects (cup, pen, spatula, paper,
   shirt) and keep the table and the bowls still. MotionCrafter's moving regions have sharp edges;
   ZeroMSF's are blurrier.
-- In shirt_fold, 70% of the pixels already move at +0.1 s. This is real: the whole shirt is dragged
-  about 20 px to the right (at 512x384) in that time, as block matching on the two frames shows, and
-  MotionCrafter shows the same.
-- ZeroMSF keeps the background still in five of the six clips: its flow stays at 0.1-0.5% of the
-  depth at all three gaps, also in paper_fold at +1.0 s, where the page flips over. shirt_fold is the
-  exception: the background flow grows from 0.5% at +0.1 s to 1.4% at +0.3 s and 2.7% at +1.0 s, and
-  the depth scale changes by 19% across the three pairs (2-5% in the other clips).
-- MotionCrafter's windows do not line up. On static pixels (the 30% with the least flow over the
-  clip), points move a median 0.012-0.016 (model units) between neighboring frames within a window,
-  but 0.069-0.120 across a window boundary (frames 25, 50, ...), 5-8 times as much. So its flow
-  cannot be chained into tracks across windows without first aligning the windows.
 - Neither method keeps point identities or predicts visibility, so neither gives long-range tracks
   directly.
