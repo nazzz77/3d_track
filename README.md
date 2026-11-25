@@ -21,7 +21,7 @@ A short analysis of the first round is in [RESULTS.md](RESULTS.md).
 ## Browse the results (no GPU needed)
 
 1. Clone this repository.
-2. Download `track3d_data.zip` (about 4.4 GB) from the Google Drive link shared with you, and unzip it
+2. Download `track3d_data.zip` (about 7.0 GB) from the Google Drive link shared with you, and unzip it
    in the repository root. It adds `preprocessed_data/` and `<method>/results/` next to the code. On a
    machine without a browser:
 
@@ -62,8 +62,8 @@ follow the official visualization scripts, instead of the comparison grid above.
 
 Both use the `.venv` that `viewer/run_viewer.sh` creates and serve on port 8080 (`--port` to change
 it). MotionCrafter's `run.py` processes each clip in independent 25-frame windows, so its point maps
-jump at frames 25, 50, ...; the viewer shows which window a frame belongs to. Their results are not in
-`track3d_data.zip` yet; produce them on a GPU as described below.
+jump at frames 25, 50, ...; the viewer shows which window a frame belongs to. Their results are part
+of `track3d_data.zip`.
 
 ## Re-run a method (GPU)
 
