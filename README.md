@@ -72,7 +72,7 @@ Each method folder has three files (the scene-flow folders also hold their viewe
 - `setup_env.sh`: one-time install of Miniforge, a Python env, the official code at a pinned commit, and
   every checkpoint (cached under `<method>/work/`, so jobs can run without internet).
 - `run_<method>.py`: the runner; it reads frames with `common/track3d_data.py` and writes
-  `results/<clip>/<setting>/`.
+  `<method>/results/` (layout under Result format below).
 - `run_<method>.sbatch`: the job script; submit it with Slurm (`sbatch`) or run it with plain `bash`.
 
 ```bash
@@ -91,7 +91,7 @@ default to 8, or `SLURM_CPUS_PER_TASK`).
 
 ## Result format
 
-`<method>/results/<clip>/<setting>/`:
+Point trackers, `<method>/results/<clip>/<setting>/`:
 
 - `tracks.npz`: `queries` (N, 3) as [t, x, y]; `tracks2d_orig` (T, N, 2) in 1920x1440 pixels;
   `tracks3d_world` (T, N, 3) in the first camera's frame (OpenCV axes, meters for metric methods);
@@ -99,6 +99,31 @@ default to 8, or `SLURM_CPUS_PER_TASK`).
   (original Stray frame numbers), `timestamps`, `fps`, `size`, `orig_size`, `settings`.
 - `result.npz`: per-frame depth, intrinsics, world-to-camera extrinsics and frames (for point clouds).
 - `overlay.mp4` (2D tracks on the video) and `log.json` (settings, runtime, GPU memory, notes).
+
+MotionCrafter, `motioncrafter/results/<clip>/`:
+
+- `<clip>.npz`: `point_map` (T, 384, 512, 3) float16, the 3D point of every pixel in each frame;
+  `scene_flow` (T, 384, 512, 3) float16, the 3D motion of every pixel from frame t to frame t+1, so
+  `point_map[t] + scene_flow[t]` is where the point moves; `valid_mask` and `deform_mask`
+  (T, 384, 512) bool, true everywhere in these runs. The points are in model units, not meters, with
+  the origin inside the scene, so z is not depth. Points from different 25-frame windows do not line
+  up.
+- `log.json`: `frame_idx` (original Stray frame numbers of the T frames), `timestamps`, `fps`,
+  `window_starts`, settings, pinned commit and checkpoints, runtime and GPU memory.
+
+ZeroMSF, `zeromsf/results/<clip>/f<a>_f<b>/`, where a and b are the original Stray frame numbers of
+the two images:
+
+- `points_3d.npy` (1, 384, 512, 3): the 3D point of every pixel of image 1, in camera-1 coordinates
+  (OpenCV axes, model units).
+- `scene_flow.npy` (1, 3, 384, 512), channels first: the 3D motion of every pixel of image 1 until the
+  time of image 2. Move the channel axis last and add it to `points_3d` to get the moved points.
+- `img_colors.npy` (1, 3, 384, 512), channels first: the RGB colors of image 1 in [0, 1].
+- `0_f<a>.png` and `1_f<b>.png` (the two input images at 512x384) and `log.json` (frame numbers,
+  timestamps, gap, settings, pinned commit and checkpoint, runtime, GPU memory).
+
+Both scene-flow `results/` folders also hold `summary.json` (one entry per run), `run_log.txt` and
+`setup_log.txt`.
 
 ## Preprocessing
 
