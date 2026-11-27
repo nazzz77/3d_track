@@ -18,6 +18,28 @@ for methods that accept external depth). Clips: `pour_lid`, `pen`, `stir`, `shoe
 1,152 query points (a 32x24 grid on frame 0 plus 16x12 grids at 1/3 and 2/3 of the clip).
 A short analysis of the first round is in [RESULTS.md](RESULTS.md).
 
+## Demos
+
+About 4 s of `pen` and 5 s of `paper_fold` at recording speed, from the video-only (`rgb`) runs.
+
+| Method | `pen` | `paper_fold` |
+| --- | --- | --- |
+| SpatialTrackerV2 | <img src="docs/demos/spatracker_v2_pen.gif" width="360"> | <img src="docs/demos/spatracker_v2_paper_fold.gif" width="360"> |
+| DELTA | <img src="docs/demos/delta_pen.gif" width="360"> | <img src="docs/demos/delta_paper_fold.gif" width="360"> |
+| TrackCraft3R | <img src="docs/demos/trackcraft3r_pen.gif" width="360"> | <img src="docs/demos/trackcraft3r_paper_fold.gif" width="360"> |
+| Track4World | <img src="docs/demos/track4world_pen.gif" width="360"> | <img src="docs/demos/track4world_paper_fold.gif" width="360"> |
+| TraceAnything | <img src="docs/demos/traceanything_pen.gif" width="360"> | <img src="docs/demos/traceanything_paper_fold.gif" width="360"> |
+| MotionCrafter | <img src="docs/demos/motioncrafter_pen.gif" width="360"> | <img src="docs/demos/motioncrafter_paper_fold.gif" width="360"> |
+| ZeroMSF | <img src="docs/demos/zeromsf_pen.gif" width="360"> | <img src="docs/demos/zeromsf_paper_fold.gif" width="360"> |
+
+- Point trackers: the tracks drawn on the video. White dots are points of the frame-0 grid that stay
+  still; colored dots with a short trail are points (from all three query grids) that move more than
+  40 px at 1920x1440 in the segment. The color encodes the query position, so a point has the same
+  color for every method. Points the method marks as occluded are hidden.
+- MotionCrafter: each pixel's motion to the next frame, tinted from red (small) to yellow (large).
+- ZeroMSF: the 3D points of one frame (231 in `pen`, 208 in `paper_fold`) moving along the predicted
+  flow to the frame 1.0 s later, seen from a viewpoint turned by 12 degrees.
+
 ## Browse the results (no GPU needed)
 
 1. Clone this repository.
