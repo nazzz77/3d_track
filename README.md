@@ -2,7 +2,7 @@
 
 Five 3D point trackers run on six tabletop manipulation clips recorded with an iPhone (Stray Scanner:
 RGB, LiDAR depth, intrinsics; fixed tripod), with identical frames and query points, plus a viser
-viewer that shows all of them side by side.
+viewer for exploring each run.
 
 | Method | Settings | Folder |
 | --- | --- | --- |
@@ -38,11 +38,10 @@ A short analysis of the first round is in [RESULTS.md](RESULTS.md).
    The first run creates `.venv/` with the packages in `viewer/requirements.txt` (needs Python 3.12 or
    newer, or `uv`). On a remote machine, forward the port: `ssh -L 8080:localhost:8080 <host>`.
 
-The viewer has a frame slider and playback, the RGB frame with one run's 2D tracks drawn on it, and a 3D
-grid (one row per setting, one column per method) with each run's point cloud, tracks, trails and
-camera. It can filter by method, setting and run, show only moving tracks, and scale non-metric runs
-(TraceAnything) to the LiDAR depth. `bash viewer/run_viewer.sh --check` validates every result file
-without starting a server.
+Use the **Method / setting** dropdown to choose a run. The 3D viewport frames that run's point cloud,
+tracks, trails and camera, and the RGB image shows its 2D tracks. You can scrub or play frames, show
+only moving tracks, and scale non-metric runs (TraceAnything) to the LiDAR depth.
+`bash viewer/run_viewer.sh --check` validates every result file without starting a server.
 
 ## Scene-flow methods (separate viewers)
 
