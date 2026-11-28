@@ -164,8 +164,6 @@ class Run:
         self.colors = query_colors(self.queries, self.size, self.orig_size)
         self.palette = list(map(tuple, self.colors.tolist()))
         tracks = self.tracks3d_world[self.valid3d]
-        pose = self.c2w[0]
-        self.center = np.median(tracks, axis=0) if tracks.size else pose[:3, 3] + pose[:3, 2]
         samples = [self.c2w[:, :3, 3], tracks]
         if self.geometry is not None:
             samples.append(self.geometry.bounding_corners())
@@ -339,23 +337,8 @@ def check_all(root, clips):
     return failures
 
 
-def grid_axis(names, limits):
-    """Pack columns or rows using every run, reserving space for empty cells."""
-    spans = [high - low for _, low, high in limits]
-    typical = max(0.1, float(np.median(spans)))
-    gap = 0.2 * typical
-    cursor = 0.0
-    cells = {}
-    for name in names:
-        lower = min((low for key, low, _ in limits if key == name), default=0.0)
-        upper = max((high for key, _, high in limits if key == name), default=typical)
-        cells[name] = (cursor - lower, lower, upper)
-        cursor += upper - lower + gap
-    return cells
-
-
 class RunNodes:
-    """Persistent scene nodes in one translated coordinate frame."""
+    """Persistent scene nodes for one run."""
 
     def __init__(self, scene, name, run):
         self.run = run
@@ -363,7 +346,7 @@ class RunNodes:
         self.cloud_at = lru_cache(maxsize=4)(partial(point_cloud, run.geometry))
         self.cloud_frame = None
         self.group = scene.add_frame(name, show_axes=False)
-        self.label = scene.add_label(f"{name}/label", run.label, anchor="bottom-center")
+        self.group.visible = False
         self.cloud = scene.add_point_cloud(f"{name}/cloud", EMPTY_POINTS, EMPTY_COLORS)
         self.tracks = scene.add_point_cloud(
             f"{name}/tracks", EMPTY_POINTS, EMPTY_COLORS, point_shape="circle",
@@ -382,6 +365,11 @@ class RunNodes:
         from viser.transforms import SO3
 
         run = self.run
+        scale = run.lidar_scale if ui.align_scale.value and run.lidar_scale is not None else 1.0
+        if scale != self.scale:
+            self.scale = scale
+            # Viser frame scale affects its axes only. Scale each geometry handle.
+            self.cloud.scale = self.tracks.scale = self.trails.scale = scale
         self.cloud.visible = ui.cloud.value and run.geometry is not None
         self.tracks.visible = ui.tracks.value
         self.trails.visible = ui.trails.value
@@ -411,31 +399,21 @@ class Viewer:
         self.server, self.root, self.clips = server, root, clips
         self.lock = threading.Condition()
         self.playing = self.closed = False
-        self.loaded_clip = self.reference = None
-        self.nodes, self.checkboxes = {}, {}
+        self.loaded_clip = self.active_node = None
+        self.nodes = {}
         server.scene.set_up_direction("-y")
         gui = server.gui
         gui.main_panel.dock_left()
         gui.main_panel.set_width(360)
         self.clip = gui.add_dropdown("Clip", tuple(clips), initial_value=initial_clip)
+        self.method = gui.add_dropdown("Method / setting", ("Loading",))
         self.image = gui.add_image(np.zeros((1, 1, 3), np.uint8), label="RGB", format="jpeg")
         self.frame = gui.add_slider("Frame", 0, 1, 1, 0)
         self.play = gui.add_button("Play")
         self.fps = gui.add_number("Playback fps", 10.0, min=0.001, step=0.001)
         self.loop = gui.add_checkbox("Loop", True)
-        self.overlay = gui.add_dropdown("2D overlay run", ("None",))
         self.readout = gui.add_markdown("")
-        paths = [path for clip_paths in clips.values() for path in clip_paths]
-        # Keep the comparison grid fixed and append any newly discovered groups.
-        methods = (*METHODS, *sorted({path.parents[3].name for path in paths} - set(METHODS)))
-        settings = (*SETTINGS, *sorted({path.parent.name for path in paths} - set(SETTINGS)))
-        with gui.add_folder("Methods"):
-            self.methods = {name: gui.add_checkbox(name, True) for name in methods}
-        with gui.add_folder("Settings"):
-            self.settings = {name: gui.add_checkbox(name, True) for name in settings}
-        self.run_folder = gui.add_folder("Runs")
         with gui.add_folder("Scene"):
-            self.layout = gui.add_dropdown("Layout", ("grid", "overlay"))
             self.align_scale = gui.add_checkbox("Scale non-metric runs to LiDAR", True)
             self.only_moving = gui.add_checkbox("Only moving tracks", False)
             self.threshold = gui.add_slider("Motion threshold (original px)", 0, 2400, 1,
@@ -446,17 +424,15 @@ class Viewer:
             self.frustum = gui.add_checkbox("Camera frustum", True)
             self.length = gui.add_slider("Trail length (frames)", 1, 60, 1, 10)
             self.cloud_stride = 2
-            self.manual_stride = False
             self.stride = gui.add_slider("Point cloud stride", 1, 4, 1, self.cloud_stride,
                                          marks=((1, "1 px"), (2, "2 px"), (4, "4 px")))
             self.point_size = gui.add_slider("Point size (m)", 0.001, 0.04, 0.001, 0.006)
             self.track_size = gui.add_slider("Track point size (m)", 0.001, 0.05, 0.001, 0.012)
         with self.lock:
             self.load_clip(initial_clip)
-        for handle in (self.clip, self.frame, self.overlay, self.layout, self.cloud, self.tracks,
+        for handle in (self.clip, self.method, self.frame, self.cloud, self.tracks,
                        self.trails, self.frustum, self.length, self.stride, self.point_size,
-                       self.track_size, self.align_scale, self.only_moving, self.threshold,
-                       *self.methods.values(), *self.settings.values()):
+                       self.track_size, self.align_scale, self.only_moving, self.threshold):
             handle.on_update(self.on_change)
         self.play.on_click(self.on_play)
         self.fps.on_update(self.on_fps)
@@ -466,31 +442,26 @@ class Viewer:
 
     def load_clip(self, clip):
         runs = [Run.load(path) for path in self.clips[clip]]
-        methods, settings = list(self.methods), list(self.settings)
+        methods = (*METHODS, *sorted({run.method for run in runs} - set(METHODS)))
+        settings = (*SETTINGS, *sorted({run.setting for run in runs} - set(SETTINGS)))
         runs.sort(key=lambda r: (settings.index(r.setting), methods.index(r.method)))
         images = load_images(self.root, clip, [run.frame_idx for run in runs])
         with self.server.atomic():
             self.set_playing(False)
             for node in self.nodes.values():
                 node.group.remove()
-            for checkbox in self.checkboxes.values():
-                checkbox.remove()
-            self.nodes.clear()
-            self.checkboxes.clear()
-            self.reference = None
+            self.active_node = None
             self.loaded_clip, self.images = clip, images
-            with self.run_folder:
-                for i, run in enumerate(runs):
-                    checkbox = self.server.gui.add_checkbox(run.label, True)
-                    checkbox.on_update(self.on_change)
-                    self.checkboxes[run.label] = checkbox
-                    self.nodes[run.label] = RunNodes(self.server.scene, f"/run_{i}", run)
-            self.overlay.options = tuple(self.nodes)
-            self.overlay.value = runs[0].label
+            self.nodes = {
+                run.label: RunNodes(self.server.scene, f"/run_{i}", run)
+                for i, run in enumerate(runs)
+            }
+            previous_method = self.method.value
+            self.method.options = tuple(self.nodes)
+            self.method.value = (previous_method if previous_method in self.nodes else runs[0].label)
             diagonal = max(np.linalg.norm(r.orig_size) for r in runs)
             self.threshold.max = max(DEFAULT_MOTION_PX, int(np.ceil(diagonal)))
             self.threshold.value = min(self.threshold.value, self.threshold.max)
-            self.update_layout()
             self.refresh()
         for client in self.server.get_clients().values():
             self.place_camera(client)
@@ -508,110 +479,63 @@ class Viewer:
                     self.clip.value = self.loaded_clip
                     self.readout.content = f"Could not load clip: {exc}"
             else:
-                reframe = event.target is self.layout or event.target is self.align_scale
-                with self.server.atomic():
-                    if reframe:
-                        self.update_layout()
-                    if event.target is self.stride:
-                        self.manual_stride = True
-                    self.refresh()
-                if reframe:
+                self.refresh()
+                if event.target is self.method or event.target is self.align_scale:
                     for client in self.server.get_clients().values():
                         self.place_camera(client)
 
-    def update_layout(self):
-        x_limits, y_limits = [], []
-        align = self.align_scale.value
-        for node in self.nodes.values():
-            run = node.run
-            node.scale = run.lidar_scale if align and run.lidar_scale is not None else 1.0
-            # Viser frame scale affects its axes only. Scale each geometry handle.
-            node.cloud.scale = node.tracks.scale = node.trails.scale = node.scale
-            lower, upper = run.lower * node.scale, run.upper * node.scale
-            x_limits.append((run.method, lower[0], upper[0]))
-            y_limits.append((run.setting, lower[1], upper[1]))
-        columns = grid_axis(self.methods, x_limits)
-        rows = grid_axis(self.settings, y_limits)
-        grid = self.layout.value == "grid"
-        for node in self.nodes.values():
-            run = node.run
-            x, left, right = columns[run.method]
-            y, top, _ = rows[run.setting]
-            node.group.position = (x, y, 0) if grid else (0, 0, 0)
-            node.label.visible = grid
-            node.label.position = ((left + right) / 2, top - 0.05, run.center[2] * node.scale)
-            node.label.text = run.label + (run.scale_description(True) if align else "")
-
-    def sync_controls(self, visible):
-        # Keep the video available even when the user hides every 3D run.
-        ref = self.nodes[visible[0] if visible else next(iter(self.nodes))].run
-        t = min(max(0, self.frame.value), len(ref.timestamps) - 1)
-        if ref is not self.reference:
+    def sync_controls(self, node):
+        run = node.run
+        t = min(max(0, self.frame.value), len(run.timestamps) - 1)
+        if node is not self.active_node:
             t = 0
-            if self.reference is not None:
-                old_times = self.reference.timestamps
+            if self.active_node is not None:
+                self.active_node.group.visible = False
+                old_times = self.active_node.run.timestamps
                 old_t = min(max(0, self.frame.value), len(old_times) - 1)
-                t = nearest_frame(ref.timestamps, old_times[old_t])
-            self.reference = ref
-            self.frame.max = len(ref.timestamps) - 1
-            self.frame.disabled = len(ref.timestamps) == 1
-            self.fps.value = ref.fps
+                t = nearest_frame(run.timestamps, old_times[old_t])
+            self.active_node = node
+            self.frame.max = len(run.timestamps) - 1
+            self.frame.disabled = len(run.timestamps) == 1
+            self.fps.value = run.fps
         self.frame.value = t
-        options = tuple(visible) or ("None",)
-        if self.overlay.options != options:
-            self.overlay.options = options
-        self.overlay.disabled = not visible
         # The viser slider has a linear step. Snap past 3 in the drag direction.
-        stride = self.stride.value if self.manual_stride else (4 if len(visible) > 4 else 2)
+        stride = self.stride.value
         if stride == 3:
             stride = 2 if self.cloud_stride == 4 else 4
         self.cloud_stride = self.stride.value = stride
-        return ref, t
+        return t
 
     def refresh(self):
         with self.server.atomic():
-            visible = [
-                key for key, node in self.nodes.items() if self.checkboxes[key].value
-                and self.methods[node.run.method].value and self.settings[node.run.setting].value
-            ]
-            ref, t = self.sync_controls(visible)
-            timestamp = ref.timestamps[t]
-            rgb = self.images[ref.frame_idx[t]]
-            lines = [f"Frame **{ref.frame_idx[t]}** at **{timestamp:.3f} s** ({ref.label})"]
-            for key, node in self.nodes.items():
-                run = node.run
-                i = t if run is ref else nearest_frame(run.timestamps, timestamp)
-                count = np.count_nonzero(run.valid3d[i])
-                moving = run.max_motion > self.threshold.value
-                selected = moving if self.only_moving.value else True
-                node.group.visible = key in visible
-                suffix = "" if node.group.visible else " (hidden)"
-                shown = ""
-                if self.only_moving.value:
-                    shown = f", {np.count_nonzero(run.valid3d[i] & moving)} after filter"
-                lines.append(f"{key}{run.scale_description(self.align_scale.value)}: {count} visible, "
-                             f"{np.count_nonzero(moving)} moving{shown}{suffix}")
-                if not node.group.visible:
-                    continue
-                frame = self.images[run.frame_idx[i]]
-                node.update(i, frame, self, selected)
-                if key == self.overlay.value:
-                    rgb = overlay_image(frame, run, i, self.length.value,
-                                        self.tracks.value, self.trails.value, selected)
-                    if run.frame_idx[i] != ref.frame_idx[t]:
-                        lines.append(f"RGB overlay: frame {run.frame_idx[i]} at {run.timestamps[i]:.3f} s")
-            self.image.image = rgb
-            self.readout.content = "  \n".join(lines)
+            node = self.nodes[self.method.value]
+            run = node.run
+            t = self.sync_controls(node)
+            frame_idx = run.frame_idx[t]
+            frame = self.images[frame_idx]
+            moving = run.max_motion > self.threshold.value
+            selected = moving if self.only_moving.value else True
+            node.update(t, frame, self, selected)
+            node.group.visible = True
+            self.image.image = overlay_image(frame, run, t, self.length.value,
+                                             self.tracks.value, self.trails.value, selected)
+            count = np.count_nonzero(run.valid3d[t])
+            shown = ""
+            if self.only_moving.value:
+                shown = f", {np.count_nonzero(run.valid3d[t] & moving)} after filter"
+            scale = run.scale_description(self.align_scale.value)
+            self.readout.content = (
+                f"Frame **{frame_idx}** at **{run.timestamps[t]:.3f} s**  \n"
+                f"{run.label}{scale}: {count} visible, {np.count_nonzero(moving)} moving{shown}"
+            )
 
     def place_camera(self, client):
         with self.lock, client.atomic():
-            nodes = [node for node in self.nodes.values() if node.group.visible]
-            if not nodes:
+            node = self.active_node
+            if node is None:
                 return
-            low = np.min([n.group.position + n.scale * n.run.lower for n in nodes], axis=0)
-            high = np.max([n.group.position + n.scale * n.run.upper for n in nodes], axis=0)
-            if self.layout.value == "grid":
-                low[1] = min(low[1], *(n.group.position[1] + n.label.position[1] for n in nodes))
+            low = node.scale * node.run.lower
+            high = node.scale * node.run.upper
             center = (low + high) / 2
             width, height = high[:2] - low[:2]
             span = max(height, width / max(client.camera.aspect, 0.1))
